@@ -1,0 +1,168 @@
+#!/bin/sh
+
+ROCKETCHAT_VERSION='0.69.2'
+ROCKETCHAT_SHA256='0509efbfa43cb641de2ee5a2d2ee032bb0f4213236eab9349370af4ba24c9f7e'
+
+export CXX=clang++
+
+error()
+{
+    echo $*
+    exit
+}
+
+patchWebFiles()
+{
+    echo Patching files in $1...
+
+    cd $1 >/dev/null 2>&1 || error "Failed to change directory. ($1:1)"
+    # Calculate old/new hashes and file sizes
+    STATS_HASH_OLD=`jq -r '.manifest|.[]|select(.type=="json").hash' program.json`
+    STATS_PATH_OLD=`jq -r '.manifest|.[]|select(.type=="json").path' program.json`
+    STATS_HASH_NEW=`sha1 -q $STATS_PATH_OLD`
+
+    HASH_OLD=`jq -r '.manifest|.[]|select(.type=="js").hash' program.json`
+    PATH_OLD=`jq -r '.manifest|.[]|select(.type=="js").path' program.json`
+    SIZE_OLD=`jq -r '.manifest|.[]|select(.type=="js").size' program.json`
+
+    # System information
+    BUILD_DATE=`date '+%B %d, %Y %I:%M %p'`
+    BUILD_OS_PLATFORM='freebsd'
+    BUILD_OS_ARCH='x64'
+    BUILD_OS_RELEASE=`uname -r`
+    BUILD_NODE_VERSION=`node -v`
+    TOTAL_MEMORY=`sysctl -n hw.physmem`
+    FREE_MEMORY=$((TOTAL_MEMORY - `sysctl -n hw.usermem`))
+    TOTAL_CPUS=`sysctl -n hw.ncpu`
+
+    echo -e "\tPatching $PATH_OLD..."
+    sed -i '' 's/build:{date:"\(.*\)",nodeVersion:"\(.*\)",arch:"\(.*\)",platform:"\(.*\)",osRelease:"\(.*\)",totalMemory:\(.*\),freeMemory:\(.*\),cpus:[0-9]*}/build:{date:"'"$BUILD_DATE"'",nodeVersion:"'"$BUILD_NODE_VERSION"'",arch:"'"$BUILD_OS_ARCH"'",platform:"'"$BUILD_OS_PLATFORM"'",osRelease:"'"$BUILD_OS_RELEASE"'",totalMemory:'"$TOTAL_MEMORY"',freeMemory:'"$FREE_MEMORY"',cpus:'"$TOTAL_CPUS"'}/' $PATH_OLD >/dev/null 2>&1 || error "Failed to execute sed. ($PATH_OLD:1)"
+
+    HASH_NEW=`sha1 -q $PATH_OLD`
+    PATH_NEW="$HASH_NEW.js"
+    SIZE_NEW=`stat -f%z $PATH_OLD`
+
+    echo -e "\tRenaming $PATH_OLD -> $PATH_NEW..."
+    mv $HASH_OLD.js $HASH_NEW.js >/dev/null 2>&1 || error "Failed to move file. (1)"
+    mv $HASH_OLD.stats.json $HASH_NEW.stats.json >/dev/null 2>&1 || error "Failed to move file. (2)"
+
+    echo -e "\tPatching program.json..."
+
+    sed -i '.bak' 's/'"$HASH_OLD"'/'"$HASH_NEW"'/' program.json >/dev/null 2>&1 || error "Failed to execute sed. ($1:2)"
+    sed -i '.bak' 's/'"$SIZE_OLD"'/'"$SIZE_NEW"'/' program.json >/dev/null 2>&1 || error "Failed to execute sed. ($1:3)"
+    sed -i '.bak' 's/'"$STATS_HASH_OLD"'/'"$STATS_HASH_NEW"'/' program.json >/dev/null 2>&1 || error "Failed to execute sed. ($1:4)"
+}
+
+updatePermissions()
+{
+    chown -R rocketchat:rocketchat $1 >/dev/null 2>&1 || error "Failed to execute chown. ($1:1)"
+    chmod ug=rwx,o= $1 >/dev/null 2>&1 || error "Failed to execute chmod. ($1:1)"
+
+    cd $1 >/dev/null 2>&1 || error "Failed to change directory. ($1:2)"
+    find . -type f -exec chmod ug=rw,o= {} \;
+    find . -type d -exec chmod ug=rwx,o= {} \;
+}
+
+# Ensure the package management tool is installed
+pkg -N >/dev/null 2>&1 || error "The package management tool is not yet installed on your system."
+
+# Install required packages
+echo "Installing required packages..."
+pkg install -y jq mongodb36 node8 npm-node8 pkgconf python python2 python27 vips 2>&1 || error "Failed to install required packages."
+
+# Remove previous Rocket.Chat build directory
+rm -rf /usr/local/rocketchat/build
+
+# Create the required directories.
+echo "Creating required directories..."
+mkdir -p /var/log/rocketchat /var/run/rocketchat /usr/local/etc/newsyslog.conf.d /usr/local/rocketchat/build /usr/local/rocketchat/uploads >/dev/null 2>&1 || error "Failed to create required directories."
+
+# Create the Rocket.Chat user and group (rocketchat)
+getent group rocketchat >/dev/null 2>&1 || {
+    echo "Creating rocketchat group..."
+    pw groupadd rocketchat >/dev/null 2>&1 || error "Failed to add rocketchat group."
+}
+id -u rocketchat >/dev/null 2>&1 || {
+    echo "Creating rocketchat user..."
+    pw useradd rocketchat -g rocketchat -c "Rocket.Chat" -d /usr/local/rocketchat -s /usr/sbin/nologin >/dev/null 2>&1 || error "Failed to add rocketchat use."
+}
+
+echo "Downloading Rocket.Chat $ROCKETCHAT_VERSION..."
+fetch -o /usr/local/rocketchat/build/rocketchat.tgz https://releases.rocket.chat/$ROCKETCHAT_VERSION/download 2>&1 || error "Failed to download Rocket.Chat $ROCKETCHAT_VERSION"
+
+echo "Extracting Rocket.Chat..."
+tar -zxf /usr/local/rocketchat/build/rocketchat.tgz -C /usr/local/rocketchat/build >/dev/null 2>&1 || error "Failed to extract Rocket.Chat."
+sha256 -c $ROCKETCHAT_SHA256 /usr/local/rocketchat/build/rocketchat.tgz >/dev/null 2>&1 || error "Failed to validate Rocket.Chat checksum."
+
+# Patch web.browser files
+patchWebFiles "/usr/local/rocketchat/build/bundle/programs/web.browser"
+
+# Patch web.cordova files
+patchWebFiles "/usr/local/rocketchat/build/bundle/programs/web.cordova"
+
+# Patch google-gax/package.json as grpc <1.15.0 doesn't compile on FreeBSD
+echo "Patching package.json for google-gax..."
+sed -i '.bak' "s/\"grpc\": \"^1.10.0\",/\"grpc\": \"^1.15.1\",/g" /usr/local/rocketchat/build/bundle/programs/server/npm/node_modules/google-gax/package.json >/dev/null 2>&1 || error "Failed to execute sed. (5)"
+
+# Remove the included version of the grpc module
+echo "Removing included grpc module..."
+rm -rf /usr/local/rocketchat/build/bundle/programs/server/npm/node_modules/grpc
+
+# Install cas
+echo "Installing cas..."
+cd /usr/local/rocketchat/build/bundle/programs/server/npm
+npm install cas 2>&1 || error "Failed to execute: npm install cas"
+
+# Install sharp
+echo "Installing sharp..."
+cd /usr/local/rocketchat/build/bundle/programs/server/npm
+rm -rf /usr/local/rocketchat/build/bundle/programs/server/npm/sharp
+npm install sharp 2>&1 || error "Failed to execute: npm install sharp"
+
+# Install bcrypt
+echo "Installing bcrypt..."
+cd /usr/local/rocketchat/build/bundle/programs/server/npm/node_modules/meteor >/dev/null 2>&1 || error "Failed to change directory. (3)"
+npm install bcrypt --clang=1 --unsafe-perm 2>&1 || error "Failed to execute: npm install bcrypt (1)"
+cd /usr/local/rocketchat/build/bundle/programs/server >/dev/null 2>&1 || error "Failed to change directory. (4)"
+npm install bcrypt --clang=1 --unsafe-perm 2>&1 || error "Failed to execute: npm install bcrypt (2)"
+
+# Install everything else
+echo "Running npm install..."
+npm install 2>&1 || error "Failed to execute: npm install"
+
+# Configure newsyslog
+echo "Configuring newsyslog..."
+grep -sq forever.log /usr/local/etc/newsyslog.conf.d/rocketchat || echo "/var/log/rocketchat/forever.log    rocketchat:rocketchat    660    7    *    @T00    JC" >> /usr/local/etc/newsyslog.conf.d/rocketchat
+grep -sq node.log /usr/local/etc/newsyslog.conf.d/rocketchat || echo "/var/log/rocketchat/node.log       rocketchat:rocketchat    660    7    *    @T00    JC" >> /usr/local/etc/newsyslog.conf.d/rocketchat
+
+# Install Rocket.Chat
+rm -rf /usr/local/rocketchat/bundle
+mv /usr/local/rocketchat/build/bundle /usr/local/rocketchat >/dev/null 2>&1 || error "Failed to move build directory."
+
+# Clean up
+echo "Cleaning up..."
+rm -rf /usr/local/rocketchat/build
+
+# Update file/directory permissions
+echo "Updating file/directory permissions (this will take a while)..."
+updatePermissions /var/log/rocketchat
+updatePermissions /var/run/rocketchat
+updatePermissions /usr/local/rocketchat
+
+# Install the Rocket.Chat rc.d script
+echo "Installing the Rocket.Chat rc.d script..."
+fetch -o /usr/local/etc/rc.d/rocketchat https://raw.githubusercontent.com/rdnn/Rocket.Chat-freebsd/master/rocketchat.rc.d 2>&1 || error "Failed to download the Rocket.Chat rc.d script."
+chmod +x /usr/local/etc/rc.d/rocketchat >/dev/null 2>&1 || error "Failed to execute chmod. (2)"
+
+# Install forever
+which forever >/dev/null 2>&1 || {
+    echo "Installing forever..."
+    npm install forever -g 2>&1 || error "Failed to execute: npm install forever -g"
+}
+
+# Enable the Rocket.Chat and Mongodb services
+echo "Enabling the Rocket.Chat and Mongodb services..."
+grep -sq ^mongod_enable /etc/rc.conf || echo 'mongod_enable="YES"' >> /etc/rc.conf
+grep -sq ^rocketchat_enable /etc/rc.conf || echo 'rocketchat_enable="YES"' >> /etc/rc.conf
+
+echo "Rocket.Chat has been installed!"
