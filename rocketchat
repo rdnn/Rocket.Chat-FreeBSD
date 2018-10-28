@@ -160,9 +160,9 @@ which forever >/dev/null 2>&1 || {
     npm install forever -g 2>&1 || error "Failed to execute: npm install forever -g"
 }
 
-# Enable the Rocket.Chat and Mongodb services
-echo "Enabling the Rocket.Chat and Mongodb services..."
-grep -sq ^mongod_enable /etc/rc.conf || echo 'mongod_enable="YES"' >> /etc/rc.conf
-grep -sq ^rocketchat_enable /etc/rc.conf || echo 'rocketchat_enable="YES"' >> /etc/rc.conf
+# Add the Rocket.Chat and Mongodb services to rc.conf
+echo "Adding the Rocket.Chat and Mongodb services to rc.conf..."
+sysrc -qc mongod_enable || sysrc -q mongod_enable=YES
+sysrc -qc rocketchat_enable || sysrc -q rocketchat_enable=YES
 
 echo "Rocket.Chat has been installed!"
