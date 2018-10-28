@@ -2,7 +2,7 @@
 Easily run [Rocket.Chat](https://github.com/RocketChat/Rocket.Chat) on FreeBSD.
 
 ## Rocket.Chat Version
-The installation script is currently configured to install Rocket.Chat 0.69.2. The installation script has only been tested on FreeBSD 11.2 with node 8.12.0 and npm 6.4.1.
+The installation script is currently configured to install Rocket.Chat 0.71.0. The installation script has only been tested on FreeBSD 11.2 with node 8.12.0 and npm 6.4.1.
 
 ## Installation
 To begin the installation, run the following as a superuser:
@@ -29,13 +29,13 @@ If all goes well, you should see the following:
 ➔ |                SERVER RUNNING                |
 ➔ +----------------------------------------------+
 ➔ |                                              |
-➔ |  Rocket.Chat Version: 0.69.2                 |
+➔ |  Rocket.Chat Version: 0.71.0                 |
 ➔ |       NodeJS Version: 8.12.0 - x64           |
 ➔ |             Platform: freebsd                |
 ➔ |         Process Port: 3000                   |
 ➔ |             Site URL: http://localhost:3000  |
 ➔ |     ReplicaSet OpLog: Disabled               |
-➔ |          Commit Hash: 7df9818105             |
+➔ |          Commit Hash: b77359c516             |
 ➔ |        Commit Branch: HEAD                   |
 ➔ |                                              |
 ➔ +----------------------------------------------+
