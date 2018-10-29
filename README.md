@@ -60,7 +60,8 @@ The installation script is a simple shell script that fetches the official [Rock
    * `/var/log/rocketchat`
    * `/usr/local/rocketchat`
 4. Download the Rocket.Chat Docker deployment image directly from [https://releases.rocket.chat](https://releases.rocket.chat)
-5. Extract, make FreeBSD-specific modifications, build, and install Rocket.Chat in `/usr/local/rocketchat`
+5. Extract, apply FreeBSD-specific modifications, build, and install Rocket.Chat in `/usr/local/rocketchat`
 6. Configure [newsyslog](https://www.freebsd.org/cgi/man.cgi?newsyslog) for log management and rotation
-7. Install [forever](https://www.npmjs.com/package/forever) globally to ensure Rocket.Chat runs continuously8. Install a [rc.d script](https://raw.githubusercontent.com/rdnn/Rocket.Chat-freebsd/master/rocketchat.rc.d) in `/usr/local/etc/rc.d` to allow the [service](https://www.freebsd.org/cgi/man.cgi?service) command to manage Rocket.Chat
-9. Enable the MongoDB and Rocket.Chat services in `/etc/rc.conf`
+7. Install [forever](https://www.npmjs.com/package/forever) globally to ensure Rocket.Chat runs continuously
+8. Install a [rc.d script](https://raw.githubusercontent.com/rdnn/Rocket.Chat-freebsd/master/rocketchat.rc.d) in `/usr/local/etc/rc.d` to allow the [service](https://www.freebsd.org/cgi/man.cgi?service) command to manage Rocket.Chat
+9. Add the MongoDB and Rocket.Chat services to `/etc/rc.conf`
