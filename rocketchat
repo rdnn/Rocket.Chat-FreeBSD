@@ -47,7 +47,6 @@ patchWebFiles()
     mv $HASH_OLD.stats.json $HASH_NEW.stats.json >/dev/null 2>&1 || error "Failed to move file. (2)"
 
     echo -e "\tPatching program.json..."
-
     sed -i '.bak' 's/'"$HASH_OLD"'/'"$HASH_NEW"'/' program.json >/dev/null 2>&1 || error "Failed to execute sed. ($1:2)"
     sed -i '.bak' 's/'"$SIZE_OLD"'/'"$SIZE_NEW"'/' program.json >/dev/null 2>&1 || error "Failed to execute sed. ($1:3)"
     sed -i '.bak' 's/'"$STATS_HASH_OLD"'/'"$STATS_HASH_NEW"'/' program.json >/dev/null 2>&1 || error "Failed to execute sed. ($1:4)"
@@ -66,12 +65,15 @@ updatePermissions()
 # Ensure the package management tool is installed
 pkg -N >/dev/null 2>&1 || error "The package management tool is not yet installed on your system."
 
+# Upgrade the package management tool, if required
+pkg upgrade -y pkg 2>&1 || error "The package management tool could not be upgraded."
+
 # Install required packages
 echo "Installing required packages..."
 pkg install -y jq mongodb36 node8 npm-node8 pkgconf python python2 python27 vips 2>&1 || error "Failed to install required packages."
 
 # Remove previous Rocket.Chat build directory
-rm -rf /usr/local/rocketchat/build
+rm -rf /usr/local/rocketchat/build 2>&1 || error "Failed to remove previous Rocket.Chat build directory."
 
 # Create the required directories.
 echo "Creating required directories..."
@@ -112,20 +114,20 @@ rm -rf /usr/local/rocketchat/build/bundle/programs/server/npm/node_modules/grpc
 
 # Install cas
 echo "Installing cas..."
-cd /usr/local/rocketchat/build/bundle/programs/server/npm
+cd /usr/local/rocketchat/build/bundle/programs/server/npm 2>&1 || error "Failed to change directory. (3)"
 npm install cas 2>&1 || error "Failed to execute: npm install cas"
 
 # Install sharp
 echo "Installing sharp..."
-cd /usr/local/rocketchat/build/bundle/programs/server/npm
+cd /usr/local/rocketchat/build/bundle/programs/server/npm 2>&1 || error "Failed to change directory. (4)"
 rm -rf /usr/local/rocketchat/build/bundle/programs/server/npm/sharp
 npm install sharp 2>&1 || error "Failed to execute: npm install sharp"
 
 # Install bcrypt
 echo "Installing bcrypt..."
-cd /usr/local/rocketchat/build/bundle/programs/server/npm/node_modules/meteor >/dev/null 2>&1 || error "Failed to change directory. (3)"
+cd /usr/local/rocketchat/build/bundle/programs/server/npm/node_modules/meteor >/dev/null 2>&1 || error "Failed to change directory. (5)"
 npm install bcrypt --clang=1 --unsafe-perm 2>&1 || error "Failed to execute: npm install bcrypt (1)"
-cd /usr/local/rocketchat/build/bundle/programs/server >/dev/null 2>&1 || error "Failed to change directory. (4)"
+cd /usr/local/rocketchat/build/bundle/programs/server >/dev/null 2>&1 || error "Failed to change directory. (6)"
 npm install bcrypt --clang=1 --unsafe-perm 2>&1 || error "Failed to execute: npm install bcrypt (2)"
 
 # Install everything else
@@ -146,7 +148,7 @@ echo "Cleaning up..."
 rm -rf /usr/local/rocketchat/build
 
 # Update file/directory permissions
-echo "Updating file/directory permissions (this will take a while)..."
+echo "Updating file/directory permissions (this may take a while)..."
 updatePermissions /var/log/rocketchat
 updatePermissions /var/run/rocketchat
 updatePermissions /usr/local/rocketchat
@@ -162,9 +164,16 @@ which forever >/dev/null 2>&1 || {
     npm install forever -g 2>&1 || error "Failed to execute: npm install forever -g"
 }
 
-# Add the Rocket.Chat and Mongodb services to rc.conf
-echo "Adding the Rocket.Chat and Mongodb services to rc.conf..."
-sysrc -qc mongod_enable || sysrc -q mongod_enable=YES
-sysrc -qc rocketchat_enable || sysrc -q rocketchat_enable=YES
+# Add the Mongodb service
+echo "Adding the Mongodb service..."
+sysrc -qc mongod_enable || {
+    sysrc -q mongod_enable=YES >/dev/null 2>&1 || error "Failed to add the Mongodb service."
+}
+
+# Add the Rocket.Chat service
+echo "Adding the Rocket.Chat service..."
+sysrc -qc rocketchat_enable || {
+    sysrc -q rocketchat_enable=YES >/dev/null 2>&1 || error "Failed to add the Rocket.Chat service."
+}
 
 echo "Rocket.Chat has been installed!"
